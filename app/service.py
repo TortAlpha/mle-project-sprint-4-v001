@@ -1,6 +1,8 @@
 import pandas as pd
 from pathlib import Path
 from typing import List
+import boto3
+from io import BytesIO
 
 # Глобальные переменные для кэширования данных
 offline_recs = None
@@ -16,37 +18,42 @@ OFFLINE_WEIGHT = 0.7
 def load_data():
     global offline_recs, similar_tracks, top_popular, items
     
-    data_path = Path("app/data")
+    # Настройки S3
+    BUCKET_NAME = 's3-student-mle-20250227-831080ee09'
     
     try:
-        recs_file = data_path / "recommendations.parquet"
-        offline_recs = pd.read_parquet(recs_file)
+
+        s3_client = boto3.client('s3', 
+                                endpoint_url="https://storage.yandexcloud.net", 
+                                region_name="ru-central1")
         
-        similar_file = data_path / "similar.parquet"
-        similar_tracks = pd.read_parquet(similar_file)
+        def read_parquet_from_s3(key):
+            obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=key)
+            return pd.read_parquet(BytesIO(obj['Body'].read()))
         
-        popular_file = data_path / "top_popular.parquet"
-        top_popular = pd.read_parquet(popular_file)
+        print(f"Загружаем recommendations...")
+        offline_recs = read_parquet_from_s3("recsys/recommendations/recommendations.parquet")
         
-        items_file = data_path / "items.parquet"
-        items = pd.read_parquet(items_file)
+        print(f"Загружаем similar...")
+        similar_tracks = read_parquet_from_s3("recsys/recommendations/similar.parquet")
         
-        print("Файлы загружены.")
+        print(f"Загружаем top_popular...")
+        top_popular = read_parquet_from_s3("recsys/recommendations/top_popular.parquet")
         
-    except FileNotFoundError as e:
-        print(f"ОШИБКА: Файл не найден")
-        print("\nСоздаём пустые датасеты для демонстрации...")
+        print(f"Загружаем items...")
+        items = read_parquet_from_s3("recsys/data/items.parquet")
         
-        # Создаём заглушки для демонстрации
-        offline_recs = pd.DataFrame(columns=['user_id', 'track_id', 'rank'])
-        similar_tracks = pd.DataFrame(columns=['track_id', 'similar_track_id', 'score'])
-        top_popular = pd.DataFrame(columns=['track_id', 'rank'])
-        items = pd.DataFrame(columns=['track_id'])
+        print("Все файлы успешно загружены из S3.")
+        print(f"  - Рекомендации: {len(offline_recs)} записей")
+        print(f"  - Похожие треки: {len(similar_tracks)} записей")
+        print(f"  - Топ популярных: {len(top_popular)} записей")
+        print(f"  - Items: {len(items)} записей")
         
     except Exception as e:
-        print(f"НЕПРЕДВИДЕННАЯ ОШИБКА")
+        print(f"ОШИБКА при загрузке из S3: {e}")
+        print(f"Тип ошибки: {type(e).__name__}")
+        print("\nСоздаём пустые датасеты для демонстрации...")
         
-        # Создаём заглушки
         offline_recs = pd.DataFrame(columns=['user_id', 'track_id', 'rank'])
         similar_tracks = pd.DataFrame(columns=['track_id', 'similar_track_id', 'score'])
         top_popular = pd.DataFrame(columns=['track_id', 'rank'])
